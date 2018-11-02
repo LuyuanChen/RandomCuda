@@ -2,9 +2,6 @@
 #include "cuda_call.h"
 #include "constant.h"
 #include <assert.h>
-#ifndef __CUDACC__ 
-#define __CUDACC__
-#endif
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <cuda.h>
@@ -25,35 +22,31 @@
 /// <param name="n">dim</param>
 /// <returns>void</returns>
 __global__ void matmul_kernel(float *c, const float *a, const float *b, int n) {
-	int row = threadIdx.y + blockIdx.y * blockDim.y;
-	int col = threadIdx.x + blockIdx.x * blockDim.x;
 	int blockRow = blockIdx.y;  // index within a grid
 	int blockCol = blockIdx.x;  // index within a grid
 	int tileRow = threadIdx.y;  // index within a tile
 	int tileCol = threadIdx.x;  // index within a tile
-	int A_tile_base, B_tile_base;
+
+	int row = blockRow * TILE_SIZE + tileRow;
+	int col = blockCol * TILE_SIZE + tileCol;
+
 	__shared__ float Asub[TILE_SIZE][TILE_SIZE];
 	__shared__ float Bsub[TILE_SIZE][TILE_SIZE];
 
 
 	float accu = 0;
-	if (row < n && col < n) {
-		for (int blk = 0; blk < n / TILE_SIZE; blk++) {
-			A_tile_base = TENSOR_SIZE * BLOCK_SIZE * blockRow + BLOCK_SIZE * blk;  // A: fix row, change col
-			B_tile_base = TENSOR_SIZE * BLOCK_SIZE * blk + BLOCK_SIZE * blockCol;  // B: fix col, change row
+	for (int blk = 0; blk < n / TILE_SIZE; blk++) {
+		// for each tile, copy memory first
+		Asub[tileRow][tileCol] = a[row * n + (blk * TILE_SIZE + tileCol)];
+		Bsub[tileRow][tileCol] = b[(blk * TILE_SIZE + tileRow) * n + col];
+		__syncthreads();
 
-			// for each tile, copy memory first
-			Asub[tileRow][tileCol] = a[A_tile_base + IDX2R(row, col, TENSOR_SIZE)];
-			Bsub[tileRow][tileCol] = b[B_tile_base + IDX2R(row, col, TENSOR_SIZE)];
-			__syncthreads();
-			
-		}
-		for (int i = 0; i < BLOCK_SIZE; i++) {
+		for (int i = 0; i < TILE_SIZE; i++) {
 			accu += Asub[tileRow][i] * Bsub[i][tileCol];
 		}
 		__syncthreads();
 	}
-	c[TENSOR_SIZE * BLOCK_SIZE * blockRow + BLOCK_SIZE * blockCol + TENSOR_SIZE * row + col] = accu;
+	c[row * n + col] = accu;
 }
 
 cudaError_t matmul(float_tensor &a, float_tensor &b, float_tensor &c) {
@@ -62,8 +55,9 @@ cudaError_t matmul(float_tensor &a, float_tensor &b, float_tensor &c) {
 	 
 	dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE);
 	dim3 gridDim(GRID(c.dims()[0], blockDim.x), GRID(c.dims()[1], blockDim.y));
-	std::cout << gridDim.x << ' ' << gridDim.y << std::endl;
+	// std::cout << gridDim.x << ' ' << gridDim.y << std::endl;
 	matmul_kernel <<<gridDim, blockDim >>> (c.begin(), a.begin(), b.begin(), inner_dim);
+
 	return cudaGetLastError();
 }
 

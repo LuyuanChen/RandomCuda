@@ -12,7 +12,7 @@ int main() {
 	double flop = 2 * pow(TENSOR_SIZE, 3);
 	int memsize = sizeof(float) * data_count;
 	float *data = new float[data_count];
-	std::fill_n(data, data_count, 10.4);
+	std::fill_n(data, data_count, MEMSET_VAL);
 
 	std::vector<int> dim{ TENSOR_SIZE , TENSOR_SIZE };
 	
@@ -23,20 +23,17 @@ int main() {
 	auto begin = std::chrono::high_resolution_clock::now();
 	a.memcpy2device((char *)data);
 	b.memcpy2device((char *)data);
-
 	auto end = std::chrono::high_resolution_clock::now();
 	std::cout << "Memcpy: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << "ns" << std::endl;
 
 	begin = std::chrono::high_resolution_clock::now();
 	CUDA_CALL(matmul(a, b, c));
 	cudaDeviceSynchronize();
-
 	end = std::chrono::high_resolution_clock::now();
 	auto matmul_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 	// (2p-1)*m*n flop
 	std::cout << "Matmul: " << matmul_time_ns << "ns " << flop << " flop" << std::endl;
 	std::cout << "Matmul: " << flop / (double)matmul_time_ns << "GFLOPS" << std::endl;
-	// std::cout << c << std::endl;
 	delete[] data;
 
 	CUDA_CALL(cudaGetLastError());
