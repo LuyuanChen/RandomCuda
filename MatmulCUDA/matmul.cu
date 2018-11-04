@@ -44,10 +44,37 @@ __global__ void matmul_kernel(float *c, const float *a, const float *b, int n) {
 		for (int i = 0; i < TILE_SIZE; i++) {
 			accu += Asub[tileRow][i] * Bsub[i][tileCol];
 		}
+
 		__syncthreads();
 	}
 	c[row * n + col] = accu;
 }
+
+__global__ void matmul_kernel_opt(float *c, const float *a, const float *b, int n) {
+	// this implementation depends on the size:
+	// OPT_TILE_SIZE		16
+	// OPT_WIDTH			64	// keep same as the thread number
+	// OPT_BLOCK_X_SIZE		16
+	// OPT_BLOCK_Y_SIZE		4
+
+
+	int by = blockIdx.y;  // index within a grid
+	int bx = blockIdx.x;  // index within a grid
+	int ty = threadIdx.y;  // index within a tile
+	int tx = threadIdx.x;  // index within a tile
+
+	__shared__ float Asub[OPT_TILE_SIZE][OPT_TILE_SIZE];
+	float c[OPT_TILE_SIZE] = { 0 };
+
+	// load A into shared memory
+	for (int i = 0; i < 4; i++) {
+		// A[(i * 4 + ty) + BLOCK_SIZE * tx] = A[a + wA * (i * 4 + ty) + tx];
+		Asub[(i * 4 + tx)][ty] = a[a + wA * (i * 4 + ty) + tx];
+	}
+
+
+}
+
 
 cudaError_t matmul(float_tensor &a, float_tensor &b, float_tensor &c) {
 	assert(a.dims()[1] == b.dims()[0]);
